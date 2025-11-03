@@ -5,298 +5,394 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Osa - Быстрый поиск по открытым источникам</title>
 
-  <!-- Подключение минималистичных стилей Pico.css -->
+  <!-- Поддержка светлой и темной темы -->
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#0066cc" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#004499" media="(prefers-color-scheme: dark)">
+
+  <!-- Стили (Pico CSS) -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
 </head>
 <body>
 
-  <main class="container" x-data="osaApp">
+<main class="container" x-data="osaApp">
+  <!-- Заголовок приложения -->
+  <header>
+    <h1>Osa</h1>
+    <p>Быстрый поиск по открытым источникам</p>
+  </header>
 
-    <!-- Заголовок приложения -->
-    <hgroup>
-      <h1>Osa</h1>
-      <p>Быстрый поиск по открытым источникам</p>
-    </hgroup>
-
-    <!-- Поле ввода поискового запроса -->
+  <!-- Форма поиска -->
+  <form role="search" @submit.prevent="performSearch">
     <input
+      id="searchInput"
       type="search"
-      x-model.trim="query"
-      :placeholder="placeholder"
-      :disabled="loading"
+      x-model.trim="searchQuery"
+      placeholder="Введите запрос..."
+      :disabled="isLoading"
       autocomplete="off"
       required
-      @keydown.enter.prevent="search"
-      aria-label="Введите запрос"
+      aria-label="Поле для ввода запроса"
     >
+    <input type="submit" value="Найти" :disabled="isLoading">
+  </form>
 
-    <!-- Блок отображения результата -->
-    <div x-show="done">
+  <div>
+    <!-- Индикатор загрузки -->
+    <template x-if="isLoading">
+      <article aria-busy="true">Загрузка...</article>
+    </template>
 
-      <!-- Сообщение об ошибке -->
-      <template x-if="error">
-        <p>
-          <strong>Ошибка:</strong>
-          <span x-text="error"></span>
-        </p>
-      </template>
+    <!-- Основной результат поиска -->
+    <article x-show="isDone && !isLoading">
+      <div x-show="errorMessage" role="alert" x-text="errorMessage"></div>
+      <div x-show="!errorMessage && summaryText" x-text="summaryText"></div>
+      <p x-show="!errorMessage && !summaryText">Ничего не найдено</p>
+    </article>
 
-      <!-- Отображение краткой сводки -->
-      <template x-if="!error && summary">
-        <p x-text="summary"></p>
-      </template>
+    <!-- Источники данных и дополнительная информация -->
+    <article x-show="isDone && !isLoading && !errorMessage && summaryText">
+      <p><strong>Источники данных</strong></p>
+      <section>
+        <ol>
+          <template x-for="source in sources" :key="source.name">
+            <li>
+              <template x-if="source.url">
+                <a :href="source.url" target="_blank" rel="noopener" x-text="source.url"></a>
+              </template>
+              <template x-if="!source.url">
+                <span x-text="source.name"></span>
+              </template>
+            </li>
+          </template>
+        </ol>
+      </section>
 
-      <!-- Сообщение при отсутствии результата -->
-      <template x-if="!error && !summary">
-        <mark>Ничего не найдено</mark>
-      </template>
+      <!-- Дополнительная информация -->
+      <details>
+        <summary>Дополнительная информация</summary>
+        <div>Время выполнения: <span x-text="elapsedTime + ' мс'"></span></div>
+        <div>Длина сводки: <span x-text="summaryText.length"></span> символов</div>
+      </details>
+    </article>
+  </div>
+</main>
 
-    </div>
+<!-- Подключение библиотек -->
+<script src="https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js" defer></script>
 
-  </main>
+<script>
+/**
+ * Абстрактный класс источника данных.
+ * Предоставляет базовый функционал: кэширование, получение JSON с таймаутом.
+ */
+class DataSource {
+  /**
+   * @param {string} name Название источника
+   */
+  constructor(name) {
+    if (!name) throw new Error('DataSource должен иметь имя');
+    this.name = name;
+    this.url = null;
+    this.cache = new Map();
+  }
 
-  <!-- Подключение Alpine.js -->
-  <script src="https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js" defer></script>
+  /**
+   * Нормализует текст: обрезает пробелы и заменяет множественные пробелы одним
+   * @param {string} text
+   * @returns {string}
+   */
+  normalizeText(text) {
+    return text ? text.trim().replace(/\s+/g, ' ') : '';
+  }
 
-  <!-- Подключение Axios для HTTP запросов -->
-  <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js" defer></script>
+  /**
+   * Разбивает текст на предложения, возвращает не более maxSentences
+   * @param {string} text
+   * @param {number} maxSentences
+   * @returns {string[]}
+   */
+  extractSentences(text, maxSentences = 20) {
+    if (!text) return [];
+    const sentences = text.split(/([.!?])\s+/);
+    const result = [];
+    for (let i = 0; i < sentences.length - 1; i += 2) {
+      const sentence = this.normalizeText(sentences[i] + sentences[i + 1]);
+      if (sentence) result.push(sentence);
+    }
+    return result.slice(0, maxSentences);
+  }
 
+  /**
+   * Получение JSON с таймаутом и повторными попытками
+   * @param {string} url
+   * @param {object} options
+   * @param {number} retries количество попыток
+   * @param {number} timeout таймаут в мс
+   * @returns {Promise<object|null>}
+   */
+  async fetchJsonWithTimeout(url, options = {}, retries = 2, timeout = 7000) {
+    if (this.cache.has(url)) return this.cache.get(url);
 
-  <script>
-    /**
-     * Абстрактный источник информации
-     * @class
-     */
-    class Source {
-      /**
-       * @param {string} name Имя источника
-       */
-      constructor(name) {
-        this.name = name;
-      }
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        const controller = new AbortController();
+        const id = setTimeout(() => controller.abort(), timeout);
+        const response = await fetch(url, { ...options, signal: controller.signal });
+        clearTimeout(id);
 
-      /**
-       * Метод загрузки данных
-       * Должен быть реализован в потомках
-       * @abstract
-       */
-      async fetch() {
-        throw new Error('Метод fetch() должен быть переопределён');
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json();
+        this.cache.set(url, data);
+        return data;
+      } catch (err) {
+        console.error(`[${this.name}] Попытка ${attempt + 1} не удалась: ${err.message}`);
+        if (attempt === retries) return null;
       }
     }
+  }
 
+  /**
+   * Абстрактный метод fetch, должен быть реализован в наследниках
+   * @param {string} query
+   * @returns {Promise<object|null>}
+   */
+  async fetch(query) {
+    throw new Error('Метод fetch() должен быть переопределён в наследнике');
+  }
+}
 
-    /**
-     * Источник: Википедия
-     * @class
-     * @extends Source
-     */
-    class WikipediaSource extends Source {
+/**
+ * Источник данных: Wikipedia
+ */
+class WikipediaSource extends DataSource {
+  constructor() {
+    super('Wikipedia');
+  }
 
-      constructor() {
-        super('Wikipedia');
-      }
+  /**
+   * Получение данных из Wikipedia API
+   * @param {string} query
+   * @returns {Promise<object|null>}
+   */
+  async fetch(query) {
+    if (!query) return null;
 
-      /**
-       * Разбивает текст на предложения
-       * @param {string} text Исходный текст
-       * @returns {string[]} Массив предложений
-       */
-      splitSentences(text) {
-        const sentences = text.split(/([.!?])\s+/);
-        const result = [];
+    try {
+      const url = `https://ru.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(query)}`;
+      const data = await this.fetchJsonWithTimeout(url);
 
-        for (let i = 0; i < sentences.length - 1; i += 2) {
-          result.push((sentences[i] + sentences[i + 1]).trim());
-        }
+      if (!data || !data.extract) return null;
 
-        return result.slice(0, 20);
-      }
-
-      /**
-       * Получает данные из Википедии по запросу
-       * @param {string} query Поисковый запрос
-       * @returns {Promise<Object|null>} Найденные факты или null
-       */
-      async fetch(query) {
-        try {
-          const response = await axios.get(
-            `https://ru.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(query)}`
-          );
-
-          const data = response.data;
-          if (!data?.extract) return null;
-
-          return {
-            claims: this.splitSentences(data.extract),
-            weight: 3,
-            service: this.name
-          };
-
-        } catch {
-          return null;
-        }
-      }
+      this.url = `https://ru.wikipedia.org/wiki/${encodeURIComponent(data.title)}`;
+      return {
+        claims: this.extractSentences(data.extract),
+        name: this.name,
+        url: this.url
+      };
+    } catch (err) {
+      console.error(`[${this.name}] Ошибка fetch: ${err.message}`);
+      return null;
     }
+  }
+}
 
+/**
+ * Класс для оценки фактов и генерации краткой сводки
+ */
+class FactEvaluator {
+  constructor() {
+    this.wordIndex = new Map();
+    this.stopWords = new Set(['и','в','на','с','что','к','по','для','не','как','но','за']);
+  }
 
-    /**
-     * Оценка фактов и формирование итоговой сводки
-     * @class
-     */
-    class FactEvaluator {
+  /**
+   * Нормализация текста: очистка от пунктуации, стоп-слов и разбиение на слова
+   * @param {string} text
+   * @returns {string[]}
+   */
+  normalizeText(text) {
+    return text
+      .toLowerCase()
+      .replace(/[^\w\s]/g, '')
+      .split(/\s+/)
+      .filter(word => word && !this.stopWords.has(word));
+  }
 
-      /**
-       * Рассчитывает схожесть предложений
-       * @param {string} a Первая строка
-       * @param {string} b Вторая строка
-       * @returns {number} Число от 0 до 1
-       */
-      similarity(a, b) {
-        const wordsA = new Set(a.toLowerCase().split(/\s+/));
-        const wordsB = new Set(b.toLowerCase().split(/\s+/));
+  /**
+   * Рассчет оценки факта по количеству уникальных слов
+   * @param {Set<string>} words
+   * @returns {number}
+   */
+  calculateScore(words) {
+    return words.size;
+  }
 
-        if (!wordsA.size || !wordsB.size) return 0;
+  /**
+   * Проверка дублирования факта по словарю
+   * @param {Set<string>} words
+   * @returns {boolean}
+   */
+  isDuplicate(words) {
+    let matches = 0;
+    words.forEach(w => { if (this.wordIndex.has(w)) matches++; });
+    return matches / words.size > 0.5;
+  }
 
-        const common = [...wordsA].filter(w => wordsB.has(w));
-        return common.length / Math.max(wordsA.size, wordsB.size);
-      }
+  /**
+   * Добавление слов факта в индекс для последующей проверки дубликатов
+   * @param {Set<string>} words
+   */
+  addToIndex(words) {
+    words.forEach(w => this.wordIndex.set(w, (this.wordIndex.get(w) || 0) + 1));
+  }
 
-      /**
-       * Создаёт краткий вывод на основе найденных данных
-       * @param {Array} results Данные всех источников
-       * @param {number} maxLength Ограничение длины текста
-       * @returns {string} Сводка
-       */
-      createSummary(results, maxLength = 300) {
-        const facts = [];
+  /**
+   * Создание сводки на основе массива результатов
+   * @param {Array<object>} results
+   * @param {number} maxLength
+   * @returns {string}
+   */
+  createSummary(results, maxLength = 300) {
+    if (!Array.isArray(results)) return '';
 
-        results.filter(Boolean).forEach(result => {
-          result.claims.forEach(claim => {
-            if (claim.length > 200) claim = claim.slice(0, 197) + '…';
-            if (!facts.some(f => this.similarity(f, claim) > 0.7)) {
-              facts.push(claim);
-            }
-          });
-        });
-
-        let summary = '';
-
-        for (const fact of facts) {
-          if ((summary + ' ' + fact).length > maxLength) break;
-          summary += (summary ? ' ' : '') + fact;
-        }
-
-        return summary;
-      }
-    }
-
-
-    /**
-     * Логика приложения Osa
-     * @class
-     */
-    class OsaApp {
-
-      constructor() {
-
-        /**
-         * Ввод пользователя
-         * @type {string}
-         */
-        this.query = '';
-
-        /**
-         * Текст в placeholder
-         * @type {string}
-         */
-        this.placeholder = 'Введите запрос...';
-
-        /**
-         * Флаг загрузки
-         * @type {boolean}
-         */
-        this.loading = false;
-
-        /**
-         * Готовность результата
-         * @type {boolean}
-         */
-        this.done = false;
-
-        /**
-         * Сообщение ошибки
-         * @type {string}
-         */
-        this.error = '';
-
-        /**
-         * Краткая сводка по итогам поиска
-         * @type {string}
-         */
-        this.summary = '';
-
-        /**
-         * Список источников для поиска
-         * @type {Source[]}
-         */
-        this.sources = [
-          new WikipediaSource()
-        ];
-
-        /**
-         * Обработчик найденных фактов
-         * @type {FactEvaluator}
-         */
-        this.evaluator = new FactEvaluator();
-      }
-
-      /**
-       * Выполняет поиск по Enter
-       * @returns {void}
-       */
-      async search() {
-        if (!this.query) return;
-
-        this.error = '';
-        this.summary = '';
-        this.done = false;
-        this.loading = true;
-
-        const userQuery = this.query;
-        this.query = '';
-        this.placeholder = 'Ищу…';
-
-        try {
-
-          const results = await Promise.all(
-            this.sources.map(src => src.fetch(userQuery))
-          );
-
-          this.summary = this.evaluator.createSummary(results);
-
-        } catch (error) {
-
-          console.error(error);
-          this.error = 'Ошибка при выполнении поиска. Повторите попытку.';
-
-        } finally {
-
-          this.loading = false;
-          this.done = true;
-          this.placeholder = userQuery || 'Введите запрос...';
-        }
-      }
-    }
-
-
-    /**
-     * Инициализация Alpine.js и запуск приложения
-     */
-    document.addEventListener('alpine:init', () => {
-      Alpine.data('osaApp', () => new OsaApp());
+    const allFacts = [];
+    results.filter(Boolean).forEach(res => {
+      if (res?.claims) allFacts.push(...res.claims.filter(Boolean));
     });
-  </script>
+
+    const scoredFacts = allFacts.map(fact => {
+      const words = new Set(this.normalizeText(fact));
+      return { fact, words, score: this.calculateScore(words) };
+    }).sort((a, b) => b.score - a.score);
+
+    this.wordIndex.clear();
+    let summary = '';
+    for (const item of scoredFacts) {
+      if (!item.words.size) continue;
+      if (this.isDuplicate(item.words)) continue;
+      if ((summary + ' ' + item.fact).length > maxLength) break;
+      summary += (summary ? ' ' : '') + item.fact;
+      this.addToIndex(item.words);
+    }
+
+    return summary;
+  }
+}
+
+/**
+ * Основной класс приложения Osa
+ */
+class OsaAppClass {
+  constructor({ sources = [new WikipediaSource()], evaluator = new FactEvaluator() } = {}) {
+    this.searchQuery = '';
+    this.isLoading = false;
+    this.isDone = false;
+    this.errorMessage = '';
+    this.summaryText = '';
+    this.elapsedTime = 0;
+    this.sources = sources;
+    this.evaluator = evaluator;
+    this.cache = new Map();
+  }
+
+  /**
+   * Выполнение поиска по всем источникам
+   */
+  async performSearch() {
+    const query = this.searchQuery.trim();
+    if (!query) {
+      this.showError('Пожалуйста, введите запрос');
+      return;
+    }
+
+    this.resetState();
+    this.isLoading = true;
+    const startTime = performance.now();
+
+    if (this.cache.has(query)) {
+      const cached = this.cache.get(query);
+      this.summaryText = cached.summaryText;
+      this.elapsedTime = cached.elapsedTime;
+      this.isDone = true;
+      this.isLoading = false;
+      return;
+    }
+
+    try {
+      const results = await Promise.all(this.sources.map(src => this.safeFetchSource(src, query)));
+      this.summaryText = this.evaluator.createSummary(results);
+      if (!this.summaryText) this.summaryText = this.getFallbackSummary(results);
+
+      this.elapsedTime = Math.round(performance.now() - startTime);
+      this.cache.set(query, { summaryText: this.summaryText, elapsedTime: this.elapsedTime });
+    } catch (err) {
+      this.showError('Произошла ошибка при поиске. Попробуйте ещё раз.');
+      console.error('OsaApp performSearch error:', err);
+    } finally {
+      this.isLoading = false;
+      this.isDone = true;
+    }
+  }
+
+  /**
+   * Безопасный вызов fetch источника с обработкой ошибок
+   * @param {DataSource} source
+   * @param {string} query
+   */
+  async safeFetchSource(source, query) {
+    try {
+      const result = await source.fetch(query);
+      if (!result) console.warn(`[OsaApp] Источник ${source.name} вернул пустой результат`);
+      return result;
+    } catch (err) {
+      console.error(`[OsaApp] Ошибка источника ${source.name}: ${err.message}`);
+      return null;
+    }
+  }
+
+  /**
+   * Получение fallback-сводки (первый найденный факт)
+   * @param {Array<object>} results
+   * @returns {string}
+   */
+  getFallbackSummary(results) {
+    for (const res of results) {
+      if (res?.claims?.length) return res.claims[0];
+    }
+    return '';
+  }
+
+  /**
+   * Сброс состояния приложения перед новым поиском
+   */
+  resetState() {
+    this.errorMessage = '';
+    this.summaryText = '';
+    this.isDone = false;
+    this.elapsedTime = 0;
+  }
+
+  /**
+   * Отображение ошибки пользователю
+   * @param {string} message
+   */
+  showError(message) {
+    this.errorMessage = message;
+    this.summaryText = '';
+    this.isDone = true;
+    this.isLoading = false;
+  }
+}
+
+/**
+ * Инициализация Alpine.js приложения
+ */
+document.addEventListener('alpine:init', () => {
+  Alpine.data('osaApp', () => new OsaAppClass());
+});
+</script>
 
 </body>
 </html>
