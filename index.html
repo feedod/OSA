@@ -17,10 +17,10 @@
 
 <main class="container" x-data="osaApp">
   <!-- Заголовок приложения -->
-  <header>
+  <hgroup>
     <h1>Osa</h1>
     <p>Быстрый поиск по открытым источникам</p>
-  </header>
+  </hgroup>
 
   <!-- Форма поиска -->
   <form role="search" @submit.prevent="performSearch">
@@ -47,7 +47,7 @@
     <article x-show="isDone && !isLoading">
       <div x-show="errorMessage" x-text="errorMessage"></div>
       <div x-show="!errorMessage && summaryText" x-text="summaryText"></div>
-      <p x-show="!errorMessage && !summaryText">Ничего не найдено</p>
+      <center x-show="!errorMessage && !summaryText">Ничего не найдено</center>
     </article>
 
     <!-- Источники данных и дополнительная информация -->
