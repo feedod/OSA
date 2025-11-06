@@ -21,8 +21,8 @@
 ## Добавление своего источника
 Добавить свой источник можно в **3 строки кода**:
 
-`class LentaRu extends DataSource { async fetch(q) { ... } }`
-`this.sources.push(new LentaRu())`
+```class LentaRu extends DataSource { async fetch(q) { ... } }
+this.sources.push(new LentaRu())
 
 ## Спасибо
 ⭐ Звезда — лучший способ сказать спасибо
