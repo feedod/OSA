@@ -306,7 +306,7 @@ class DuckDuckGoSource extends DataSource {
       const sentence = (sentences[i] + (sentences[i + 1] || '')).trim().replace(/\s+/g, ' ');
       if (sentence) result.push(sentence);
     }
-    return result.slice(0, maxSentances);
+    return result.slice(0, maxSentences);
   }
 
   /**
