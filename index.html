@@ -486,8 +486,14 @@
 
           if (this.cache.has(query)) {
             const cached = this.cache.get(query);
+
             this.summaryText = cached.summaryText;
             this.elapsedTime = cached.elapsedTime;
+            this.filteredSources = cached.filteredSources;
+            this.confidenceLevel = cached.confidenceLevel;
+            this.sourceCount = cached.sourceCount;
+            this.summaryLength = cached.summaryLength;
+
             this.isDone = true;
             this.isLoading = false;
             return;
@@ -499,7 +505,14 @@
 
             this.summaryText = summaryText || this.getFallbackSummary(results);
             this.elapsedTime = Math.round(performance.now() - startTime);
-            this.cache.set(query, { summaryText: this.summaryText, elapsedTime: this.elapsedTime });
+            this.cache.set(query, {
+              summaryText: this.summaryText,
+              elapsedTime: this.elapsedTime,
+              filteredSources: this.filteredSources,
+              confidenceLevel: this.confidenceLevel,
+              sourceCount: this.sourceCount,
+              summaryLength: this.summaryLength,
+            });
 
             this.filteredSources = results.filter((r) => r);
             this.confidenceLevel = confidenceLevel;
