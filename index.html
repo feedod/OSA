@@ -1,12 +1,12 @@
 <!DOCTYPE html>
 <html lang="ru">
   <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>OSA</title>
-    <meta name="description" content="Быстрый поиск по открытым источникам">
-    <link rel="icon" href="/favicon.ico" type="image/x-icon">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+    <meta name="description" content="Быстрый поиск по открытым источникам" />
+    <link rel="icon" href="/favicon.ico" type="image/x-icon" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css" />
   </head>
   <body>
     <main class="container" x-data="osaApp" x-init="init()">
@@ -15,16 +15,7 @@
         <p>Быстрый поиск по открытым источникам</p>
       </hgroup>
       <form role="search" @submit.prevent="performSearch">
-        <input
-          id="searchInput"
-          type="search"
-          x-model.trim="searchQuery"
-          placeholder="Введите запрос"
-          :disabled="isLoading"
-          autocomplete="off"
-          required
-          aria-label="Поле для ввода запроса"
-          />
+        <input id="searchInput" type="search" x-model.trim="searchQuery" placeholder="Введите запрос" :disabled="isLoading" autocomplete="off" required aria-label="Поле для ввода запроса" />
         <button type="submit" :disabled="isLoading">Найти</button>
       </form>
       <section>
@@ -73,8 +64,8 @@
          * @param {Object} options Настройки источника.
          */
         constructor(name, options = {}) {
-          if (!name) throw new Error('DataSource должен иметь имя');
-      
+          if (!name) throw new Error("DataSource должен иметь имя");
+
           this.name = name;
           this.retries = options.retries ?? 3;
           this.timeout = options.timeout ?? 7000;
@@ -84,7 +75,7 @@
           this.cache = new Map();
           this.activeRequests = new Map();
         }
-      
+
         /**
          * Получение данных из кэша.
          * @param {string} key Ключ кэша.
@@ -101,7 +92,7 @@
           this.cache.set(key, entry); // Обновляем порядок LRU
           return entry.data;
         }
-      
+
         /**
          * Сохранение данных в кэш.
          * @param {string} key Ключ кэша.
@@ -114,7 +105,7 @@
           }
           this.cache.set(key, { timestamp: Date.now(), data });
         }
-      
+
         /**
          * Получение JSON с обработкой таймаута и retry.
          * @param {string} url URL запроса.
@@ -124,33 +115,33 @@
         async fetchJson(url, config = {}) {
           const cached = this.getCache(url);
           if (cached) return cached;
-      
+
           if (this.activeRequests.has(url)) {
             return this.activeRequests.get(url);
           }
-      
+
           let attempt = 0;
           const baseDelay = 300;
-      
+
           const promise = (async () => {
             while (attempt <= this.retries) {
               try {
                 const cancelSource = axios.CancelToken.source();
                 const timer = setTimeout(() => cancelSource.cancel(`Timeout ${this.timeout}ms`), this.timeout);
-      
+
                 const response = await axios.get(url, {
                   headers: this.headers,
                   timeout: this.timeout,
                   cancelToken: cancelSource.token,
-                  ...config
+                  ...config,
                 });
-      
+
                 clearTimeout(timer);
-      
+
                 if (response.status !== 200) {
                   throw new Error(`HTTP ${response.status}`);
                 }
-      
+
                 const data = response.data;
                 this.setCache(url, data);
                 this.activeRequests.delete(url);
@@ -162,40 +153,40 @@
                 } else {
                   console.warn(`[${this.name}] Попытка ${attempt} не удалась: ${err.message}`);
                 }
-      
+
                 if (attempt > this.retries) {
                   this.activeRequests.delete(url);
                   return null;
                 }
-      
+
                 const delay = baseDelay * Math.pow(2, attempt);
                 await new Promise((resolve) => setTimeout(resolve, delay));
               }
             }
             return null;
           })();
-      
+
           this.activeRequests.set(url, promise);
           return promise;
         }
-      
+
         /**
          * Абстрактный метод получения данных.
          * @param {string} query Запрос.
          */
         async fetch(query) {
-          throw new Error('Метод fetch() должен быть переопределён в наследнике');
+          throw new Error("Метод fetch() должен быть переопределён в наследнике");
         }
       }
-      
+
       /**
        * Источник Wikipedia.
        */
       class WikipediaSource extends DataSource {
         constructor() {
-          super('Wikipedia');
+          super("Wikipedia");
         }
-      
+
         /**
          * Получение данных из Wikipedia API.
          * @param {string} query Запрос.
@@ -207,19 +198,19 @@
             const url = `https://ru.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(query)}`;
             const data = await this.fetchJson(url);
             if (!data || !data.extract) return null;
-      
+
             this.url = `https://ru.wikipedia.org/wiki/${encodeURIComponent(data.title)}`;
             return {
               claims: this.extractSentences(data.extract),
               name: this.name,
-              url: this.url
+              url: this.url,
             };
           } catch (err) {
             console.error(`[Wikipedia] Ошибка fetch: ${err.message}`);
             return null;
           }
         }
-      
+
         /**
          * Разбивает текст на предложения.
          * @param {string} text Текст.
@@ -231,110 +222,104 @@
           const sentences = text.split(/([.!?])\s+/);
           const result = [];
           for (let i = 0; i < sentences.length - 1; i += 2) {
-            const sentence = (sentences[i] + sentences[i + 1]).trim().replace(/\s+/g, ' ');
+            const sentence = (sentences[i] + sentences[i + 1]).trim().replace(/\s+/g, " ");
             if (sentence) result.push(sentence);
           }
           return result.slice(0, maxSentences);
         }
       }
+
       /**
-      * Источник DuckDuckGo Instant Answer.
-      */
+       * Источник DuckDuckGo Instant Answer.
+       */
       class DuckDuckGoSource extends DataSource {
-      constructor() {
-      super('DuckDuckGo');
-      }
-      
-      /**
-      * Получение данных из DuckDuckGo Instant Answer API.
-      * @param {string} query Запрос.
-      * @return {Promise<Object|null>}
-      */
-      async fetch(query) {
-      if (!query) return null;
-      
-      try {
-      const url = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`;
-      const data = await this.fetchJson(url);
-      
-      // Если нет полезного ответа — возвращаем null
-      if (!data || data.Type === 'D' || !data.AbstractText) {
-        return null;
-      }
-      
-      const title = data.Heading || query;
-      const sourceUrl = data.AbstractURL || data.AbstractSource
-        ? (data.AbstractURL || `https://duckduckgo.com/?q=${encodeURIComponent(query)}`)
-        : `https://duckduckgo.com/?q=${encodeURIComponent(query)}`;
-      
-      this.url = sourceUrl;
-      
-      return {
-        claims: this.extractSentences(data.AbstractText, 15),
-        name: this.name,
-        url: this.url,
-        extra: {
-          title,
-          source: data.AbstractSource || 'DuckDuckGo',
-          infobox: data.Infobox ? this.parseInfobox(data.Infobox) : null
+        constructor() {
+          super("DuckDuckGo");
         }
-      };
-      } catch (err) {
-      console.error(`[DuckDuckGo] Ошибка fetch: ${err.message}`);
-      return null;
+
+        /**
+         * Получение данных из DuckDuckGo Instant Answer API.
+         * @param {string} query Запрос.
+         * @return {Promise<Object|null>}
+         */
+        async fetch(query) {
+          if (!query) return null;
+
+          try {
+            const url = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`;
+            const data = await this.fetchJson(url);
+
+            // Если нет полезного ответа — возвращаем null
+            if (!data || data.Type === "D" || !data.AbstractText) {
+              return null;
+            }
+
+            const title = data.Heading || query;
+            const sourceUrl = data.AbstractURL || data.AbstractSource ? data.AbstractURL || `https://duckduckgo.com/?q=${encodeURIComponent(query)}` : `https://duckduckgo.com/?q=${encodeURIComponent(query)}`;
+
+            this.url = sourceUrl;
+
+            return {
+              claims: this.extractSentences(data.AbstractText, 15),
+              name: this.name,
+              url: this.url,
+              extra: {
+                title,
+                source: data.AbstractSource || "DuckDuckGo",
+                infobox: data.Infobox ? this.parseInfobox(data.Infobox) : null,
+              },
+            };
+          } catch (err) {
+            console.error(`[DuckDuckGo] Ошибка fetch: ${err.message}`);
+            return null;
+          }
+        }
+
+        /**
+         * Разбивает текст на предложения.
+         * @param {string} text Текст.
+         * @param {number} maxSentences Максимальное количество предложений.
+         * @return {Array<string>}
+         */
+        extractSentences(text, maxSentences = 15) {
+          if (!text) return [];
+          const sentences = text.split(/([.!?])\s+/);
+          const result = [];
+          for (let i = 0; i < sentences.length - 1; i += 2) {
+            const sentence = (sentences[i] + (sentences[i + 1] || "")).trim().replace(/\s+/g, " ");
+            if (sentence) result.push(sentence);
+          }
+          return result.slice(0, maxSentences);
+        }
+
+        /**
+         * Парсит Infobox из DuckDuckGo (если есть).
+         * @param {Object} infobox
+         * @return {Object|null}
+         */
+        parseInfobox(infobox) {
+          if (!infobox || !infobox.content) return null;
+
+          const info = {};
+          infobox.content.forEach((item) => {
+            if (item.label && item.value) {
+              info[item.label] = item.value;
+            }
+          });
+          return Object.keys(info).length > 0 ? info : null;
+        }
       }
-      }
-      
-      /**
-      * Разбивает текст на предложения.
-      * @param {string} text Текст.
-      * @param {number} maxSentences Максимальное количество предложений.
-      * @return {Array<string>}
-      */
-      extractSentences(text, maxSentences = 15) {
-      if (!text) return [];
-      const sentences = text.split(/([.!?])\s+/);
-      const result = [];
-      for (let i = 0; i < sentences.length - 1; i += 2) {
-      const sentence = (sentences[i] + (sentences[i + 1] || '')).trim().replace(/\s+/g, ' ');
-      if (sentence) result.push(sentence);
-      }
-      return result.slice(0, maxSentences);
-      }
-      
-      /**
-      * Парсит Infobox из DuckDuckGo (если есть).
-      * @param {Object} infobox
-      * @return {Object|null}
-      */
-      parseInfobox(infobox) {
-      if (!infobox || !infobox.content) return null;
-      
-      const info = {};
-      infobox.content.forEach(item => {
-      if (item.label && item.value) {
-        info[item.label] = item.value;
-      }
-      });
-      return Object.keys(info).length > 0 ? info : null;
-      }
-      }
-      
+
       /**
        * Класс для оценки фактов и генерации сводки.
        */
       class FactEvaluator {
         constructor({ stopWords = null, sourceWeights = null } = {}) {
           this.wordIndex = new Map();
-          this.stopWords =
-            stopWords ||
-            new Set([
-              'и','в','на','с','что','к','по','для','не','как','но','за',
-              'the','a','an','of','in','on','and','or','but','with'
-            ]);
+          this.stopWords = stopWords || new Set(["и", "в", "на", "с", "что", "к", "по", "для", "не", "как", "но", "за", "the", "a", "an", "of", "in", "on", "and", "or", "but", "with"]);
           this.sourceWeights = sourceWeights || {};
         }
-      
+
         /**
          * Нормализация текста: очистка от стоп-слов и разбиение на слова.
          * @param {string} text
@@ -344,11 +329,11 @@
           if (!text) return [];
           return text
             .toLowerCase()
-            .replace(/[^\wа-яё]/gi, ' ')
+            .replace(/[^\wа-яё]/gi, " ")
             .split(/\s+/)
             .filter((w) => w && !this.stopWords.has(w));
         }
-      
+
         /**
          * Рассчет оценки факта.
          * @param {Set<string>} words
@@ -359,7 +344,7 @@
           const weight = source && this.sourceWeights[source] ? this.sourceWeights[source] : 1.0;
           return words.size * weight;
         }
-      
+
         /**
          * Проверка дублирования факта.
          * @param {Set<string>} words
@@ -368,10 +353,12 @@
         isDuplicate(words) {
           if (!words.size) return true;
           let matches = 0;
-          words.forEach((w) => { if (this.wordIndex.has(w)) matches++; });
+          words.forEach((w) => {
+            if (this.wordIndex.has(w)) matches++;
+          });
           return matches / words.size > 0.5;
         }
-      
+
         /**
          * Добавление слов факта в индекс.
          * @param {Set<string>} words
@@ -379,7 +366,7 @@
         addToIndex(words) {
           words.forEach((w) => this.wordIndex.set(w, (this.wordIndex.get(w) || 0) + 1));
         }
-      
+
         /**
          * Создает сводку из массива результатов.
          * @param {Array<Object>} results
@@ -389,37 +376,43 @@
         createSummary(results, maxLength = 300) {
           const allFacts = [];
           results.filter(Boolean).forEach((r) => {
-            if (r?.claims) r.claims.forEach((cl) => { if (cl) allFacts.push({ fact: cl, source: r.name }); });
+            if (r?.claims)
+              r.claims.forEach((cl) => {
+                if (cl) allFacts.push({ fact: cl, source: r.name });
+              });
           });
-      
+
           const scored = allFacts
             .map((i) => {
               const words = new Set(this.normalizeText(i.fact));
               return { ...i, words, score: this.calculateScore(words, i.source) };
             })
             .sort((a, b) => b.score - a.score);
-      
+
           this.wordIndex.clear();
-          let summary = '';
+          let summary = "";
           const used = [];
-      
+
           for (const i of scored) {
             if (!i.words.size) continue;
             if (this.isDuplicate(i.words)) continue;
-      
-            const conflict = this.calculateConflict(i.words, used.map((f) => f.words));
+
+            const conflict = this.calculateConflict(
+              i.words,
+              used.map((f) => f.words)
+            );
             if (conflict > 0.5) continue;
-      
-            if ((summary + ' ' + i.fact).length > maxLength) break;
-      
-            summary += (summary ? ' ' : '') + i.fact;
+
+            if ((summary + " " + i.fact).length > maxLength) break;
+
+            summary += (summary ? " " : "") + i.fact;
             this.addToIndex(i.words);
             used.push(i);
           }
-      
+
           return summary;
         }
-      
+
         /**
          * Рассчет конфликта между фактом и существующими фактами.
          * @param {Set<string>} factWords
@@ -435,7 +428,7 @@
           }
           return conflicts / existingFacts.length;
         }
-      
+
         /**
          * Рассчет доверия к фактам.
          * @param {Array<Object>} results
@@ -443,10 +436,10 @@
          */
         calculateConfidence(results) {
           if (!Array.isArray(results) || !results.length) return 0;
-      
+
           let totalScore = 0;
           let totalWeight = 0;
-      
+
           results.forEach((r) => {
             if (!r?.claims) return;
             const w = this.sourceWeights[r.name] || 1.0;
@@ -456,11 +449,11 @@
               totalWeight += w;
             });
           });
-      
+
           if (totalWeight === 0) return 0;
           return Math.min(1, totalScore / totalWeight / 10);
         }
-      
+
         /**
          * Генерация сводки и метаданных.
          * @param {Array<Object>} results
@@ -472,46 +465,46 @@
           const confidenceLevel = this.calculateConfidence(results);
           const sourceCount = results.filter((r) => r && r.claims && r.claims.length).length;
           const summaryLength = summaryText.length;
-      
+
           return {
             summaryText,
-            confidenceLevel: (confidenceLevel * 100).toFixed(0) + '%',
+            confidenceLevel: (confidenceLevel * 100).toFixed(0) + "%",
             sourceCount,
-            summaryLength
+            summaryLength,
           };
         }
       }
-      
+
       /**
        * Основной класс приложения OSA.
        */
       class OsaAppClass {
         constructor({ sources = [new WikipediaSource(), new DuckDuckGoSource()], evaluator = new FactEvaluator() } = {}) {
-          this.searchQuery = '';
+          this.searchQuery = "";
           this.isLoading = false;
           this.isDone = false;
-          this.errorMessage = '';
-          this.summaryText = '';
+          this.errorMessage = "";
+          this.summaryText = "";
           this.elapsedTime = 0;
           this.sources = sources;
           this.evaluator = evaluator;
           this.cache = new Map();
         }
-      
+
         resetState() {
-          this.errorMessage = '';
-          this.summaryText = '';
+          this.errorMessage = "";
+          this.summaryText = "";
           this.isDone = false;
           this.elapsedTime = 0;
         }
-      
+
         showError(msg) {
           this.errorMessage = msg;
-          this.summaryText = '';
+          this.summaryText = "";
           this.isDone = true;
           this.isLoading = false;
         }
-      
+
         async safeFetchSource(src, query) {
           try {
             const result = await src.fetch(query);
@@ -522,25 +515,25 @@
             return null;
           }
         }
-      
+
         getFallbackSummary(results) {
           for (const r of results) {
             if (r?.claims?.length) return r.claims[0];
           }
-          return '';
+          return "";
         }
-      
+
         async performSearch() {
           const query = this.searchQuery.trim();
           if (!query) {
-            this.showError('Пожалуйста, введите запрос');
+            this.showError("Пожалуйста, введите запрос");
             return;
           }
-      
+
           this.resetState();
           this.isLoading = true;
           const startTime = performance.now();
-      
+
           if (this.cache.has(query)) {
             const cached = this.cache.get(query);
             this.summaryText = cached.summaryText;
@@ -549,33 +542,33 @@
             this.isLoading = false;
             return;
           }
-      
+
           try {
             const results = await Promise.all(this.sources.map((s) => this.safeFetchSource(s, query)));
             const { summaryText, confidenceLevel, sourceCount, summaryLength } = this.evaluator.summarizeResults(results);
-      
+
             this.summaryText = summaryText || this.getFallbackSummary(results);
             this.elapsedTime = Math.round(performance.now() - startTime);
             this.cache.set(query, { summaryText: this.summaryText, elapsedTime: this.elapsedTime });
-      
+
             this.filteredSources = results.filter((r) => r);
             this.confidenceLevel = confidenceLevel;
             this.sourceCount = sourceCount;
             this.summaryLength = summaryLength;
           } catch (err) {
-            this.showError('Произошла ошибка при поиске. Попробуйте ещё раз.');
-            console.error('OsaApp performSearch error:', err);
+            this.showError("Произошла ошибка при поиске. Попробуйте ещё раз.");
+            console.error("OsaApp performSearch error:", err);
           } finally {
             this.isLoading = false;
             this.isDone = true;
           }
         }
-      
+
         init() {}
       }
-      
-      document.addEventListener('alpine:init', () => {
-        Alpine.data('osaApp', () => new OsaAppClass());
+
+      document.addEventListener("alpine:init", () => {
+        Alpine.data("osaApp", () => new OsaAppClass());
       });
     </script>
   </body>
