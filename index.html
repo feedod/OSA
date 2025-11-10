@@ -228,6 +228,45 @@
             }
 
             /**
+             * Источник RSS.
+             */
+            class RSSSource extends DataSource {
+                /**
+                 * @param {string} name Название источника.
+                 * @param {string} feedUrl URL RSS-фида.
+                 */
+                constructor(name, feedUrl) {
+                    super(name);
+                    this.feedUrl = feedUrl;
+                }
+
+                /**
+                 * Получение данных из RSS-фида.
+                 * @param {string} query Запрос для фильтрации заголовков.
+                 * @return {Promise<Object|null>}
+                 */
+                async fetch(query) {
+                    if (!query) return null;
+                    try {
+                        const url = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(this.feedUrl)}`;
+                        const data = await this.fetchJson(url);
+                        if (!data?.items) return null;
+
+                        const matches = data.items.filter((i) => i.title.toLowerCase().includes(query.toLowerCase())).map((i) => i.title + ". " + (i.description || ""));
+
+                        return {
+                            claims: matches.slice(0, 10),
+                            name: this.name,
+                            url: this.feedUrl,
+                        };
+                    } catch (err) {
+                        console.error(`[RSSSource] Ошибка fetch: ${err.message}`);
+                        return null;
+                    }
+                }
+            }
+
+            /**
              * Класс для оценки фактов и генерации сводки.
              */
             class FactEvaluator {
@@ -396,7 +435,15 @@
              * Основной класс приложения OSA.
              */
             class OsaAppClass {
-                constructor({ sources = [new WikipediaSource()], evaluator = new FactEvaluator() } = {}) {
+                constructor({
+                    sources = [new WikipediaSource(), new RSSSource("Habr", "https://habr.com/ru/rss/all/all/")],
+                    evaluator = new FactEvaluator({
+                        sourceWeights: {
+                            Wikipedia: 1.3,
+                            Habr: 1.0,
+                        },
+                    }),
+                } = {}) {
                     this.searchQuery = "";
                     this.isLoading = false;
                     this.isDone = false;
